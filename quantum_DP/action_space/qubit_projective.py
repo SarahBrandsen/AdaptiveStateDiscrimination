@@ -85,13 +85,16 @@ class Qubit_Proj_ParamSpace:
         # Construct measurement
         phi = A_param
         c, s = np.cos(phi), np.sin(phi)
-        Pi_pos, Pi_neg = np.outer([c, s], [c, s]), np.outer([-s, c], [-s, c])
+        M = {
+            '+': np.outer([c, s], [c, s]),
+            '-': np.outer([-s, c], [-s, c])
+        }
         # Generate random outcome
-        pmf = np.clip([np.trace(Pi_pos @ rho), np.trace(Pi_neg @ rho)], 0, 1)
-        d = np.random.choice(['+', '-'], p=pmf)
+        pmf = np.clip([np.trace(M[d] @ rho).real for d in self.outcomes], 0, 1)
+        d = np.random.choice(self.outcomes, p=pmf)
         # Compute updated prior
-        Pi = Pi_pos if d == '+' else Pi_neg
-        t1 = np.trace(Pi @ rho_pos) * prior + 1e-20
-        t2 = np.trace(Pi @ rho_neg) * (1 - prior) + 1e-20
+        Pi = M[d]
+        t1 = np.trace(Pi @ rho_pos).real * prior + 1e-20
+        t2 = np.trace(Pi @ rho_neg).real * (1 - prior) + 1e-20
         new_prior = t1 / (t1 + t2)
         return d, new_prior

@@ -31,7 +31,7 @@ def helstrom(q, rho_pos, rho_neg):
     for rp, rn in zip(rho_pos, rho_neg):
         lam, v = np.linalg.eigh((1 - q) * rn - q * rp)
         V = (lam >= 0) * v
-        Pi_neg, Pi_pos = V @ V.T, np.eye(lam.size) - V @ V.T
+        Pi_pos, Pi_neg = np.eye(lam.size) - V @ V.conj().T, V @ V.conj().T
         dist['+'].append([
             ('+', np.trace(Pi_pos @ rp)),
             ('-', np.trace(Pi_neg @ rp))
@@ -52,9 +52,9 @@ def helstrom(q, rho_pos, rho_neg):
     rho_pos, rho_neg = cum_kron(rho_pos), cum_kron(rho_neg)
     lam, v = np.linalg.eigh((1 - q) * rho_neg - q * rho_pos)
     V = (lam >= 0) * v
-    Pi_neg, Pi_pos = V @ V.T, np.eye(lam.size) - V @ V.T
+    Pi_neg, Pi_pos = V @ V.conj().T, np.eye(lam.size) - V @ V.conj().T
     prob_global = q * np.trace(Pi_pos @ rho_pos) + (1 - q) * np.trace(Pi_neg @ rho_neg)
-    return prob_global, prob_local
+    return prob_global.real, prob_local.real
 
 
 def random_density_matrix(g, dim, is_complex=False):

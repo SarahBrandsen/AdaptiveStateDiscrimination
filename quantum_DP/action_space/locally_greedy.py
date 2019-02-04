@@ -48,7 +48,7 @@ class Locally_Greedy_ParamSpace:
         lam, v = np.linalg.eigh((1 - p) * rho_neg - p * rho_pos)
         V = (lam[:, None, :] >= 0) * v
         res = V @ V.swapaxes(-2, -1).conj()
-        return res, np.eye(2) - res
+        return np.eye(2) - res, res
 
     def to_tensor(self, x):
         '''
@@ -109,13 +109,13 @@ class Locally_Greedy_ParamSpace:
         # Construct measurement
         lam, v = np.linalg.eigh((1 - prior) * rho_neg - prior * rho_pos)
         V = (lam >= 0) * v
-        Pi_pos, Pi_neg = V @ V.T, np.eye(2) - V @ V.T
+        M = {'+': np.eye(2) - V @ V.conj().T, '-': V @ V.conj().T}
         # Generate random outcome
-        pmf = np.clip([np.trace(Pi_pos @ rho), np.trace(Pi_neg @ rho)], 0, 1)
-        d = np.random.choice(['+', '-'], p=pmf)
+        pmf = np.clip([np.trace(M[d] @ rho).real for d in self.outcomes], 0, 1)
+        d = np.random.choice(self.outcomes, p=pmf)
         # Compute updated prior
-        Pi = Pi_pos if d == '+' else Pi_neg
-        t1 = np.trace(Pi @ rho_pos) * prior + 1e-20
-        t2 = np.trace(Pi @ rho_neg) * (1 - prior) + 1e-20
+        Pi = M[d]
+        t1 = np.trace(Pi @ rho_pos).real * prior + 1e-20
+        t2 = np.trace(Pi @ rho_neg).real * (1 - prior) + 1e-20
         new_prior = t1 / (t1 + t2)
         return d, new_prior
