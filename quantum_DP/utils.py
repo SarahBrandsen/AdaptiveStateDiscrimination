@@ -1,5 +1,6 @@
 import numpy as np
 from functools import reduce
+from itertools import product
 from quantum_DP.mytqdm import tqdm_notebook_EX as tqdm
 
 
@@ -14,17 +15,46 @@ def cum_kron(rhos):
     return reduce(lambda cum, val: np.kron(cum, val), rhos, 1)
 
 
-def helstrom(rho_pos, rho_neg):
+def helstrom(q, rho_pos, rho_neg):
     '''
     Success probability using Helstrom
     Arguments:
+        q {number} -- prior probability that rho = rhohat_+
         rho_pos {list[np.array]} -- list of rhohat_+ matrices
         rho_neg {list[np.array]} -- list of rhohat_- matrices
     Returns:
-        number -- success probability using Helstrom
+        prob_global {number} -- success probability using Helstrom globally
+        prob_local {number} -- success probability using Helstrom locally with majority vote
     '''
-    X = cum_kron(rho_pos) - cum_kron(rho_neg)
-    return 1 / 2 + 1 / 4 * abs(np.linalg.eigvalsh(X)).sum()
+    # locally helstrom
+    dist, N = {'+': [], '-': []}, len(rho_pos)
+    for rp, rn in zip(rho_pos, rho_neg):
+        lam, v = np.linalg.eigh((1 - q) * rn - q * rp)
+        V = (lam >= 0) * v
+        Pi_neg, Pi_pos = V @ V.T, np.eye(lam.size) - V @ V.T
+        dist['+'].append([
+            ('+', np.trace(Pi_pos @ rp)),
+            ('-', np.trace(Pi_neg @ rp))
+        ])
+        dist['-'].append([
+            ('+', np.trace(Pi_pos @ rn)),
+            ('-', np.trace(Pi_neg @ rn))
+        ])
+    prob_local = q * sum(
+        np.prod([v[1] for v in tup]) for tup in product(*dist['+'])
+        if sum(t[0] == '+' for t in tup) > N / 2 - (q >= 1 / 2 and N % 2 == 0)
+    ) + (1 - q) * sum(
+        np.prod([v[1] for v in tup]) for tup in product(*dist['-'])
+        if sum(t[0] == '-' for t in tup) > N / 2 - (q < 1 / 2 and N % 2 == 0)
+    )
+
+    # globally helstrom
+    rho_pos, rho_neg = cum_kron(rho_pos), cum_kron(rho_neg)
+    lam, v = np.linalg.eigh((1 - q) * rho_neg - q * rho_pos)
+    V = (lam >= 0) * v
+    Pi_neg, Pi_pos = V @ V.T, np.eye(lam.size) - V @ V.T
+    prob_global = q * np.trace(Pi_pos @ rho_pos) + (1 - q) * np.trace(Pi_neg @ rho_neg)
+    return prob_global, prob_local
 
 
 def random_density_matrix(g, dim, is_complex=False):
