@@ -26,7 +26,7 @@ class Qutrit_Proj_ParamSpace:
             device {str} -- working device (default: {'cpu'})
         '''
         assert mode in ['ternary', 'binary']
-        self.mode, self.device = mode, device
+        self.mode, self.device, self.Q = mode, device, Q
         # Compute points of subdivision
         vertices, _ = self.icosahedron_subdivision(d)
         # Convert 3d-points on sphere into (phi, theta)
@@ -36,7 +36,7 @@ class Qutrit_Proj_ParamSpace:
             np.vstack([
                 phi.repeat(Q),
                 theta.repeat(Q),
-                np.tile(np.arange(theta.size), Q)
+                np.tile(np.linspace(0, np.pi, Q + 1)[:-1], theta.size)
             ]).T
         ).double().to(self.device)
         # For each (phi, theta), compute Q different orthonormal basis for it
@@ -133,6 +133,26 @@ class Qutrit_Proj_ParamSpace:
         theta = np.arccos(vertices[:, 2])
         return phi, theta
 
+    def rotation_matrix(self, phi, theta):
+        '''
+        Given polar coordinates, compute the rotation matrix that maps north pole to the given point
+        Arguments:
+            phi {np.array} -- longitude
+            theta {np.array} -- latitude
+        Returns:
+            np.array -- rotation matrix that maps north pole to the given point
+        '''
+        s1, c1 = np.sin(phi), np.cos(phi)
+        s2, c2 = np.sin(theta), np.cos(theta)
+        mats = np.array([
+            [-s1, c1 * c2, c1 * s2],
+            [c1, s1 * c2, s1 * s2],
+            [np.zeros_like(theta), -s2, c2]
+        ])
+        if len(mats.shape) == 3:
+            mats = mats.transpose([2, 0, 1])
+        return mats
+
     def orthonormal_basis(self, phi, theta, Q):
         '''
         Given polar coordinate, return Q/2 orthonormal basis whose z axis aligns it
@@ -143,30 +163,11 @@ class Qutrit_Proj_ParamSpace:
         Returns:
             np.array -- Q/2 orthonormal basis
         '''
-        def rotation_matrix(phi, theta):
-            '''
-            Given polar coordinates, compute the rotation matrix that maps north pole to the given point
-            Arguments:
-                phi {np.array} -- longitude
-                theta {np.array} -- latitude
-            Returns:
-                np.array -- rotation matrix that maps north pole to the given point
-            '''
-            s1, c1 = np.sin(phi), np.cos(phi)
-            s2, c2 = np.sin(theta), np.cos(theta)
-            mats = np.array([
-                [-s1, c1 * c2, c1 * s2],
-                [c1, s1 * c2, s1 * s2],
-                [np.zeros_like(theta), -s2, c2]
-            ])
-            if len(mats.shape) == 3:
-                mats = mats.transpose([2, 0, 1])
-            return mats
 
         assert Q % 2 == 0
-        M = rotation_matrix(phi, theta)
-        z = np.linspace(0, np.pi, Q + 1)[:-1]
-        equator = np.vstack([np.cos(z), np.sin(z), np.zeros_like(z)])
+        M = self.rotation_matrix(phi, theta)
+        omega = np.linspace(0, np.pi, Q + 1)[:-1]
+        equator = np.vstack([np.cos(omega), np.sin(omega), np.zeros_like(omega)])
         ws = M @ equator
 
         u1 = ws.swapaxes(-1, -2)
@@ -196,3 +197,49 @@ class Qutrit_Proj_ParamSpace:
         # Round to 20 precision to avoid numerical issues
         val = ((val * 1e20).round() / 1e20).double()
         return val.reshape(-1, 1)
+
+    def take_action(self, rho, rho_pos, rho_neg, prior, A_param, A_alloc):
+        '''
+        Given rhohat_+, rhohat_- and prior, rho is an unknown state can be
+        either rhohat_+ or rhohat_-. Apply measurement parameterized by A_param
+        and A_alloc on rho, draw random outcome and the corresponding updated prior
+        Arguments:
+            rho {np.array} -- an unknown matrix that can be rhohat_+ or rhohat_-
+            rho_pos {np.array} -- rhohat_+ state
+            rho_neg {np.array} -- rhohat_- state
+            prior {number} -- prior probability that rho is rhohat_+
+            A_param {np.array} -- action parameter
+            A_alloc {int} -- allocation of orthonormal basis is self.allot[A_alloc]
+        Returns:
+            d {str} -- measurement outcome
+            new_prior {number} -- the updated prior after the measurement
+        '''
+        # Construct measurement
+        phi, theta, omega = A_param
+        M = self.rotation_matrix(phi, theta)
+        us = {
+            1: M @ np.array([np.cos(omega), np.sin(omega), 0]),
+            2: M @ np.array([-np.sin(omega), np.cos(omega), 0]),
+            3: M @ np.array([0, 0, 1])
+        }
+        if self.mode == 'ternary':
+            M = {
+                '+': np.outer(us[1], us[1]),
+                '-': np.outer(us[2], us[2]),
+                '*': np.outer(us[3], us[3])
+            }
+        elif self.mode == 'binary':
+            first, second = [[int(c) for c in s] for s in self.allocations[A_alloc].split(',')]
+            M = {
+                '+': sum(np.outer(us[i], us[i]) for i in first),
+                '-': sum(np.outer(us[i], us[i]) for i in second)
+            }
+        # Generate random outcome
+        pmf = np.clip([np.trace(M[d] @ rho).real for d in self.outcomes], 0, 1)
+        d = np.random.choice(self.outcomes, p=pmf)
+        # Compute updated prior
+        Pi = M[d]
+        t1 = np.trace(Pi @ rho_pos).real * prior + 1e-20
+        t2 = np.trace(Pi @ rho_neg).real * (1 - prior) + 1e-20
+        new_prior = t1 / (t1 + t2)
+        return d, new_prior

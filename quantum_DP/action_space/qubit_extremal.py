@@ -81,3 +81,37 @@ class Qubit_Extremal_POVM_ParamSpace:
         # Round to 20 precision to avoid numerical issues
         val = ((val * 1e20).round() / 1e20).double()
         return val.reshape(-1, 1)
+
+    def take_action(self, rho, rho_pos, rho_neg, prior, A_param, A_allot=None):
+        '''
+        Given rhohat_+, rhohat_- and prior, rho is an unknown state can be
+        either rhohat_+ or rhohat_-. Apply measurement parameterized by A_param
+        and A_allot on rho, draw random outcome and the corresponding updated prior
+        Arguments:
+            rho {np.array} -- an unknown matrix that can be rhohat_+ or rhohat_-
+            rho_pos {np.array} -- rhohat_+ state
+            rho_neg {np.array} -- rhohat_- state
+            prior {number} -- prior probability that rho is rhohat_+
+            A_param {np.array} -- action parameter
+        Keyword Arguments:
+            A_allot {None} -- unused for this case (default: {None})
+        Returns:
+            d {str} -- measurement outcome
+            new_prior {number} -- the updated prior after the measurement
+        '''
+        # Construct measurement
+        alpha1, phi1, alpha2, phi2, alpha3, phi3 = A_param
+        M = {
+            '+': alpha1 * np.outer(*[[np.cos(phi1), np.sin(phi1)]] * 2),
+            '-': alpha2 * np.outer(*[[np.cos(phi2), np.sin(phi2)]] * 2),
+            '*': alpha3 * np.outer(*[[np.cos(phi3), np.sin(phi3)]] * 2)
+        }
+        # Generate random outcome
+        pmf = np.clip([np.trace(M[d] @ rho).real for d in self.outcomes], 0, 1)
+        d = np.random.choice(self.outcomes, p=pmf)
+        # Compute updated prior
+        Pi = M[d]
+        t1 = np.trace(Pi @ rho_pos).real * prior + 1e-20
+        t2 = np.trace(Pi @ rho_neg).real * (1 - prior) + 1e-20
+        new_prior = t1 / (t1 + t2)
+        return d, new_prior
