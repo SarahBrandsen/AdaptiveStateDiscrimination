@@ -43,7 +43,6 @@ class DP_Node:
             self.R = torch.stack([torch.ones(Qp + 1), torch.zeros(Qp + 1)]).double().to(self.device)
             self.A_index = torch.zeros(2, Qp + 1).long().to(self.device)
             self.A_param = torch.zeros(2, Qp + 1, param_dim).double().to(self.device)
-            self.A_param_idx = torch.zeros(2, Qp + 1).long().to(self.device)
             self.A_allot = torch.zeros(2, Qp + 1).long().to(self.device)
 
     def p_index(self, p):
@@ -309,7 +308,6 @@ class Quantum_DP:
                 # For each next index, compute the best error probability
                 R_j = torch.ones_like(node.R)
                 A_param_j = torch.zeros_like(node.A_param)
-                A_param_idx_j = torch.zeros_like(node.A_param_idx)
                 A_allot_j = torch.zeros_like(node.A_allot)
                 for t, tau in enumerate(self.Asp.allocations):
                     # compute \sum_d g_j(d, M_\tau, p) R_{S\j}( h_j(d, M_\tau, p) )
@@ -320,7 +318,6 @@ class Quantum_DP:
                     if update.any():
                         R_j[update] = R_temp[update]
                         A_param_j[update] = self.Asp.param_space[idx_temp[update]]
-                        A_param_idx_j[update] = idx_temp[update]
                         A_allot_j[update] = t
                 # Best order: minimize over different next indices
                 update = R_j[0] < node.R[0]
@@ -328,7 +325,6 @@ class Quantum_DP:
                     node.R[0, update] = R_j[0, update]
                     node.A_index[0, update] = int(j)
                     node.A_param[0, update] = A_param_j[0, update]
-                    node.A_param_idx[0, update] = A_param_idx_j[0, update]
                     node.A_allot[0, update] = A_allot_j[0, update]
                 # Worst order: maximize over different next indices
                 if self.all_identical:
@@ -338,7 +334,6 @@ class Quantum_DP:
                     node.R[1, update] = R_j[1, update]
                     node.A_index[1, update] = int(j)
                     node.A_param[1, update] = A_param_j[1, update]
-                    node.A_param_idx[1, update] = A_param_idx_j[1, update]
                     node.A_allot[1, update] = A_allot_j[1, update]
         # Mark current DP node as computed
         node.computed = True
