@@ -36,7 +36,7 @@ class Qutrit_Proj_ParamSpace:
             np.vstack([
                 phi.repeat(Q),
                 theta.repeat(Q),
-                np.tile(np.linspace(0, np.pi, Q + 1)[:-1], theta.size)
+                np.tile(np.linspace(0, np.pi / 2, Q + 1)[:-1], theta.size)
             ]).T
         ).double().to(self.device)
         # For each (phi, theta), compute Q different orthonormal basis for it
@@ -155,23 +155,21 @@ class Qutrit_Proj_ParamSpace:
 
     def orthonormal_basis(self, phi, theta, Q):
         '''
-        Given polar coordinate, return Q/2 orthonormal basis whose z axis aligns it
+        Given polar coordinate, return Q orthonormal basis whose z axis aligns it
         Arguments:
             phi {np.array} -- longitude
             theta {np.array} -- latitude
             Q {int} -- quantization resolution on the equator
         Returns:
-            np.array -- Q/2 orthonormal basis
+            np.array -- Q orthonormal basis
         '''
-
-        assert Q % 2 == 0
         M = self.rotation_matrix(phi, theta)
-        omega = np.linspace(0, np.pi, Q + 1)[:-1]
-        equator = np.vstack([np.cos(omega), np.sin(omega), np.zeros_like(omega)])
-        ws = M @ equator
+        omega = np.linspace(0, np.pi / 2, Q + 1)[:-1]
+        equator1 = np.vstack([np.cos(omega), np.sin(omega), np.zeros_like(omega)])
+        equator2 = np.vstack([-np.sin(omega), np.cos(omega), np.zeros_like(omega)])
 
-        u1 = ws.swapaxes(-1, -2)
-        u2 = np.roll(ws, Q // 2, axis=-1).swapaxes(-1, -2)
+        u1 = (M @ equator1).swapaxes(-1, -2)
+        u2 = (M @ equator2).swapaxes(-1, -2)
         u3 = np.tile(M[..., [-1]], [1, Q]).swapaxes(-1, -2)
         # From (\phi_1, \theta_1, 0), ..., (\phi_1, \theta_1, Q-1), ...
         # to   (\phi_S, \theta_S, 0), ..., (\phi_S, \theta_S, Q-1)
