@@ -48,7 +48,7 @@ class Locally_Greedy_ParamSpace:
         lam, v = np.linalg.eigh((1 - p) * rho_neg - p * rho_pos)
         V = (lam[:, None, :] >= 0) * v
         res = V @ V.swapaxes(-2, -1).conj()
-        return np.eye(2) - res, res
+        return np.eye(res.shape[-1]) - res, res
 
     def to_tensor(self, x):
         '''
